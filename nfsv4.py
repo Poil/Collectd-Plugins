@@ -69,4 +69,3 @@ def log_verbose(msg):
 collectd.register_config(configure_callback)
 collectd.register_read(read_callback)
 
-

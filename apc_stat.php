@@ -20,4 +20,5 @@ echo '    "cached": '.count($cache_info['cache_list']).",\n";
 echo '    "deleted": '.count($cache_info['deleted_list'])."\n";
 echo '  }'."\n";
 echo '}'."\n";
+?>
 
