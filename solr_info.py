@@ -20,11 +20,11 @@ def configure_callback(conf):
             # if the instance is named, get the first given name
             if len(node.values):
                 if len(node.values) > 1:
-                    collectd.info("%s: Ignoring extra instance names (%s)" % (__name__, ", ".join(node.values[1:])) )
-                SOLR_INSTANCE = node.values[0]
+                    collectd.info("%s: Ignoring extra instance names (%s)" % (__name__, ", ".join(node.values[1:])))
+                solr_instance = node.values[0]
             # else register an empty name instance
             else:
-                SOLR_INSTANCE = 'default'
+                solr_instance = 'default'
 
         for child in node.children:
             if child.key == 'Host':
@@ -37,22 +37,22 @@ def configure_callback(conf):
                 collectd.warning('solr_info plugin: Unknown config key: %s.' % node.key)
 
         # add this instance to the dict of instances
-        SOLR_INSTANCES[SOLR_INSTANCE] = "http://" + SOLR_HOST + ":" + str(SOLR_PORT) + "/solr/" + SOLR_INSTANCE
+        SOLR_INSTANCES[solr_instance] = "http://" + SOLR_HOST + ":" + str(SOLR_PORT) + "/solr/" + solr_instance
         continue
 
-    log_verbose('Configured with host=%s, port=%s, instance=%s' % (SOLR_HOST, SOLR_PORT, SOLR_INSTANCE))
+    log_verbose('Configured with host=%s, port=%s, instance=%s' % (SOLR_HOST, SOLR_PORT, solr_instance))
 
 
 def dispatch_value(plugin_category, value, value_name, value_type, type_instance=None):
     val = collectd.Values(plugin="solr_info")
     val.type = value_type
-    
-    val.plugin_instance = plugin_category.replace('-','_')+"-"+value_name
+
+    val.plugin_instance = plugin_category.replace('-', '_')+"-"+value_name
 
     if type_instance is not None:
-       val.type_instance = type_instance
+        val.type_instance = type_instance
     else:
-       val.type_instance = value_name
+        val.type_instance = value_name
     val.values = [value]
     val.dispatch()
 
@@ -61,8 +61,8 @@ def fetch_data():
     global SOLR_INSTANCES, SOLR_HANDLERS
     data = {}
 
-    for SOLR_INSTANCE,URL in SOLR_INSTANCES.iteritems():
-        stats_url = "%s/admin/mbeans?stats=true&wt=json" % (URL)
+    for solr_instance, url in SOLR_INSTANCES.iteritems():
+        stats_url = "%s/admin/mbeans?stats=true&wt=json" % (url)
 
         stats = urllib2.urlopen(stats_url)
         solr_data = json.load(stats)
@@ -74,70 +74,72 @@ def fetch_data():
         solr_data_iter = iter(solr_data)
         solr_data = itertools.izip(solr_data_iter, solr_data_iter)
 
-        data[SOLR_INSTANCE] = { "cache": {}, "handler_stats": {}, "update_stats": {} }
+        data[solr_instance] = {"cache": {}, "handler_stats": {}, "update_stats": {}}
         for module, module_data in solr_data:
             if module == "CORE":
-                data[SOLR_INSTANCE]["docs"] = module_data["searcher"]["stats"]["numDocs"]
+                data[solr_instance]["docs"] = module_data["searcher"]["stats"]["numDocs"]
             elif module == "CACHE":
-                data[SOLR_INSTANCE]["cache"]["size"] = module_data["fieldValueCache"]["stats"]["size"]
-                data[SOLR_INSTANCE]["cache"]["hitratio"] = module_data["fieldValueCache"]["stats"]["hitratio"]
-                data[SOLR_INSTANCE]["cache"]["evictions"] = module_data["fieldValueCache"]["stats"]["evictions"]
+                data[solr_instance]["cache"]["size"] = module_data["fieldValueCache"]["stats"]["size"]
+                data[solr_instance]["cache"]["hitratio"] = module_data["fieldValueCache"]["stats"]["hitratio"]
+                data[solr_instance]["cache"]["evictions"] = module_data["fieldValueCache"]["stats"]["evictions"]
             elif module == "QUERYHANDLER":
-                interesting_handlers = { endpoint: name for name, endpoint in SOLR_HANDLERS.iteritems() }
+                #interesting_handlers = { endpoint: name for name, endpoint in SOLR_HANDLERS.iteritems() }
+                # Fix python 2.6
+                interesting_handlers = dict((endpoint, name) for (endpoint, name) in SOLR_HANDLERS.iteritems())
                 for handler, handler_data in module_data.iteritems():
                     if handler not in interesting_handlers:
                         continue
 
                     handler_name = interesting_handlers[handler]
-                    data[SOLR_INSTANCE]["handler_stats"][handler_name] = {}
-                    data[SOLR_INSTANCE]["handler_stats"][handler_name]["requests"] = handler_data["stats"]["requests"]
-                    data[SOLR_INSTANCE]["handler_stats"][handler_name]["errors"] = handler_data["stats"]["errors"]
-                    data[SOLR_INSTANCE]["handler_stats"][handler_name]["timeouts"] = handler_data["stats"]["timeouts"]
-                    data[SOLR_INSTANCE]["handler_stats"][handler_name]["time_per_request"] = handler_data["stats"]["avgTimePerRequest"]
-                    data[SOLR_INSTANCE]["handler_stats"][handler_name]["requests_per_second"] = handler_data["stats"]["avgRequestsPerSecond"]
+                    data[solr_instance]["handler_stats"][handler_name] = {}
+                    data[solr_instance]["handler_stats"][handler_name]["requests"] = handler_data["stats"]["requests"]
+                    data[solr_instance]["handler_stats"][handler_name]["errors"] = handler_data["stats"]["errors"]
+                    data[solr_instance]["handler_stats"][handler_name]["timeouts"] = handler_data["stats"]["timeouts"]
+                    data[solr_instance]["handler_stats"][handler_name]["time_per_request"] = handler_data["stats"]["avgTimePerRequest"]
+                    data[solr_instance]["handler_stats"][handler_name]["requests_per_second"] = handler_data["stats"]["avgRequestsPerSecond"]
             elif module == "UPDATEHANDLER":
-                data[SOLR_INSTANCE]["update_stats"]["commits"] = module_data["updateHandler"]["stats"]["commits"]
-                data[SOLR_INSTANCE]["update_stats"]["autocommits"] = module_data["updateHandler"]["stats"]["autocommits"]
+                data[solr_instance]["update_stats"]["commits"] = module_data["updateHandler"]["stats"]["commits"]
+                data[solr_instance]["update_stats"]["autocommits"] = module_data["updateHandler"]["stats"]["autocommits"]
                 if module_data["updateHandler"]["stats"].has_key('soft autocommits'):
-                    data[SOLR_INSTANCE]["update_stats"]["soft_autocommits"] = module_data["updateHandler"]["stats"]["soft autocommits"]
-                data[SOLR_INSTANCE]["update_stats"]["optimizes"] = module_data["updateHandler"]["stats"]["optimizes"]
-                data[SOLR_INSTANCE]["update_stats"]["rollbacks"] = module_data["updateHandler"]["stats"]["rollbacks"]
-                data[SOLR_INSTANCE]["update_stats"]["expunges"] = module_data["updateHandler"]["stats"]["expungeDeletes"]
-                data[SOLR_INSTANCE]["update_stats"]["pending_docs"] = module_data["updateHandler"]["stats"]["docsPending"]
-                data[SOLR_INSTANCE]["update_stats"]["adds"] = module_data["updateHandler"]["stats"]["adds"]
-                data[SOLR_INSTANCE]["update_stats"]["deletes_by_id"] = module_data["updateHandler"]["stats"]["deletesById"]
-                data[SOLR_INSTANCE]["update_stats"]["deletes_by_query"] = module_data["updateHandler"]["stats"]["deletesByQuery"]
-                data[SOLR_INSTANCE]["update_stats"]["errors"] = module_data["updateHandler"]["stats"]["errors"]
+                    data[solr_instance]["update_stats"]["soft_autocommits"] = module_data["updateHandler"]["stats"]["soft autocommits"]
+                data[solr_instance]["update_stats"]["optimizes"] = module_data["updateHandler"]["stats"]["optimizes"]
+                data[solr_instance]["update_stats"]["rollbacks"] = module_data["updateHandler"]["stats"]["rollbacks"]
+                data[solr_instance]["update_stats"]["expunges"] = module_data["updateHandler"]["stats"]["expungeDeletes"]
+                data[solr_instance]["update_stats"]["pending_docs"] = module_data["updateHandler"]["stats"]["docsPending"]
+                data[solr_instance]["update_stats"]["adds"] = module_data["updateHandler"]["stats"]["adds"]
+                data[solr_instance]["update_stats"]["deletes_by_id"] = module_data["updateHandler"]["stats"]["deletesById"]
+                data[solr_instance]["update_stats"]["deletes_by_query"] = module_data["updateHandler"]["stats"]["deletesByQuery"]
+                data[solr_instance]["update_stats"]["errors"] = module_data["updateHandler"]["stats"]["errors"]
     return data
 
 
 def read_callback():
     data = fetch_data()
-    for SOLR_INSTANCE in SOLR_INSTANCES:
-        dispatch_value(SOLR_INSTANCE, data[SOLR_INSTANCE]["docs"], "index", "gauge", "documents")
-        dispatch_value(SOLR_INSTANCE, data[SOLR_INSTANCE]["cache"]["size"], "cache", "gauge", "size")
-        dispatch_value(SOLR_INSTANCE, data[SOLR_INSTANCE]["cache"]["hitratio"], "cache_hitratio", "gauge", "hitratio")
-        dispatch_value(SOLR_INSTANCE, data[SOLR_INSTANCE]["cache"]["evictions"], "cache", "gauge", "evictions")
+    for solr_instance in SOLR_INSTANCES:
+        dispatch_value(solr_instance, data[solr_instance]["docs"], "index", "gauge", "documents")
+        dispatch_value(solr_instance, data[solr_instance]["cache"]["size"], "cache", "gauge", "size")
+        dispatch_value(solr_instance, data[solr_instance]["cache"]["hitratio"], "cache_hitratio", "gauge", "hitratio")
+        dispatch_value(solr_instance, data[solr_instance]["cache"]["evictions"], "cache", "gauge", "evictions")
 
-        for handler_name, handler_data in data[SOLR_INSTANCE]["handler_stats"].iteritems():
-            dispatch_value(SOLR_INSTANCE, handler_data["requests"], handler_name, "gauge", "requests")
-            dispatch_value(SOLR_INSTANCE, handler_data["errors"], handler_name, "gauge", "errors")
-            dispatch_value(SOLR_INSTANCE, handler_data["timeouts"], handler_name, "gauge", "timeouts")
-            dispatch_value(SOLR_INSTANCE, handler_data["time_per_request"], "request_times", "gauge", handler_name)
-            dispatch_value(SOLR_INSTANCE, handler_data["requests_per_second"], "requests_per_second", "gauge", handler_name)
+        for handler_name, handler_data in data[solr_instance]["handler_stats"].iteritems():
+            dispatch_value(solr_instance, handler_data["requests"], handler_name, "gauge", "requests")
+            dispatch_value(solr_instance, handler_data["errors"], handler_name, "gauge", "errors")
+            dispatch_value(solr_instance, handler_data["timeouts"], handler_name, "gauge", "timeouts")
+            dispatch_value(solr_instance, handler_data["time_per_request"], "request_times", "gauge", handler_name)
+            dispatch_value(solr_instance, handler_data["requests_per_second"], "requests_per_second", "gauge", handler_name)
 
-        dispatch_value(SOLR_INSTANCE, data[SOLR_INSTANCE]["update_stats"]["commits"], "update", "gauge", "commits")
-        dispatch_value(SOLR_INSTANCE, data[SOLR_INSTANCE]["update_stats"]["autocommits"], "update", "gauge", "autocommits")
-        if data[SOLR_INSTANCE]["update_stats"].has_key("soft_autocommits"):
-            dispatch_value(SOLR_INSTANCE, data[SOLR_INSTANCE]["update_stats"]["soft_autocommits"], "update", "gauge", "soft_autocommits")
-        dispatch_value(SOLR_INSTANCE, data[SOLR_INSTANCE]["update_stats"]["optimizes"], "update", "gauge", "optimizes")
-        dispatch_value(SOLR_INSTANCE, data[SOLR_INSTANCE]["update_stats"]["expunges"], "update", "gauge", "expunges")
-        dispatch_value(SOLR_INSTANCE, data[SOLR_INSTANCE]["update_stats"]["rollbacks"], "update", "gauge", "rollbacks")
-        dispatch_value(SOLR_INSTANCE, data[SOLR_INSTANCE]["update_stats"]["pending_docs"], "update", "gauge", "pending_docs")
-        dispatch_value(SOLR_INSTANCE, data[SOLR_INSTANCE]["update_stats"]["adds"], "update", "gauge", "adds")
-        dispatch_value(SOLR_INSTANCE, data[SOLR_INSTANCE]["update_stats"]["deletes_by_id"], "update", "gauge", "deletes_by_id")
-        dispatch_value(SOLR_INSTANCE, data[SOLR_INSTANCE]["update_stats"]["deletes_by_query"], "update", "gauge", "deletes_by_query")
-        dispatch_value(SOLR_INSTANCE, data[SOLR_INSTANCE]["update_stats"]["errors"], "update", "gauge", "errors")
+        dispatch_value(solr_instance, data[solr_instance]["update_stats"]["commits"], "update", "gauge", "commits")
+        dispatch_value(solr_instance, data[solr_instance]["update_stats"]["autocommits"], "update", "gauge", "autocommits")
+        if data[solr_instance]["update_stats"].has_key("soft_autocommits"):
+            dispatch_value(solr_instance, data[solr_instance]["update_stats"]["soft_autocommits"], "update", "gauge", "soft_autocommits")
+        dispatch_value(solr_instance, data[solr_instance]["update_stats"]["optimizes"], "update", "gauge", "optimizes")
+        dispatch_value(solr_instance, data[solr_instance]["update_stats"]["expunges"], "update", "gauge", "expunges")
+        dispatch_value(solr_instance, data[solr_instance]["update_stats"]["rollbacks"], "update", "gauge", "rollbacks")
+        dispatch_value(solr_instance, data[solr_instance]["update_stats"]["pending_docs"], "update", "gauge", "pending_docs")
+        dispatch_value(solr_instance, data[solr_instance]["update_stats"]["adds"], "update", "gauge", "adds")
+        dispatch_value(solr_instance, data[solr_instance]["update_stats"]["deletes_by_id"], "update", "gauge", "deletes_by_id")
+        dispatch_value(solr_instance, data[solr_instance]["update_stats"]["deletes_by_query"], "update", "gauge", "deletes_by_query")
+        dispatch_value(solr_instance, data[solr_instance]["update_stats"]["errors"], "update", "gauge", "errors")
 
 
 def log_verbose(msg):
